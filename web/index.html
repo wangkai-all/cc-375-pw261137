@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>在线派生列迁移管道 · 控制台</title>
+<style>
+  :root {
+    --bg:#0f1420; --panel:#171e2e; --panel2:#1e2740; --line:#2a3550;
+    --text:#e6ebf5; --muted:#8b97ad; --accent:#5b8def; --accent2:#38c2a8;
+    --warn:#e8a33d; --danger:#e0606b; --ok:#4caf7d;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--text);
+    font:14px/1.6 -apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif; }
+  header { padding:16px 24px; border-bottom:1px solid var(--line);
+    display:flex; align-items:center; gap:16px; flex-wrap:wrap; background:var(--panel); }
+  header h1 { font-size:17px; margin:0; font-weight:650; }
+  .badge { padding:2px 10px; border-radius:999px; font-size:12px; border:1px solid var(--line); }
+  .badge.pending { color:var(--warn); border-color:var(--warn); }
+  .badge.auth { color:var(--accent2); border-color:var(--accent2); }
+  main { padding:20px 24px; display:grid; grid-template-columns:1fr 1fr; gap:16px; max-width:1500px; }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:16px; }
+  .card.full { grid-column:1 / -1; }
+  .card h2 { font-size:14px; margin:0 0 12px; color:var(--muted); font-weight:600;
+    text-transform:uppercase; letter-spacing:.06em; }
+  .stat-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; }
+  .stat { background:var(--panel2); border-radius:10px; padding:12px; }
+  .stat .n { font-size:24px; font-weight:700; }
+  .stat .l { color:var(--muted); font-size:12px; }
+  .n.PENDING { color:var(--warn); } .n.STALE{ color:var(--danger); }
+  .n.COMPUTED{ color:var(--ok); }
+  button { background:var(--accent); color:#fff; border:0; border-radius:8px;
+    padding:7px 14px; font-size:13px; cursor:pointer; }
+  button.secondary { background:var(--panel2); border:1px solid var(--line); color:var(--text); }
+  button.danger { background:var(--danger); }
+  button:disabled { opacity:.45; cursor:not-allowed; }
+  input,textarea,select { width:100%; background:var(--panel2); border:1px solid var(--line);
+    color:var(--text); border-radius:8px; padding:8px 10px; font-size:13px; font-family:inherit; }
+  textarea { min-height:74px; font-family:ui-monospace,Menlo,Consolas,monospace; }
+  label { display:block; font-size:12px; color:var(--muted); margin:8px 0 4px; }
+  .row { display:flex; gap:10px; flex-wrap:wrap; align-items:end; }
+  .row > div { flex:1; min-width:110px; }
+  table { width:100%; border-collapse:collapse; font-size:12.5px; }
+  th,td { text-align:left; padding:7px 8px; border-bottom:1px solid var(--line); }
+  th { color:var(--muted); font-weight:600; }
+  tr:hover td { background:var(--panel2); }
+  .pill { padding:1px 8px; border-radius:999px; font-size:11px; white-space:nowrap; }
+  .pill.PENDING { background:rgba(232,163,61,.15); color:var(--warn); }
+  .pill.STALE { background:rgba(224,96,107,.15); color:var(--danger); }
+  .pill.COMPUTED { background:rgba(76,175,125,.15); color:var(--ok); }
+  .pill.DONE { background:rgba(76,175,125,.15); color:var(--ok); }
+  .pill.RUNNING { background:rgba(91,141,239,.18); color:var(--accent); }
+  .pill.INTERRUPTED { background:rgba(232,163,61,.15); color:var(--warn); }
+  .pill.PENDING2 { background:var(--panel2); color:var(--muted); }
+  .gate-ok { color:var(--ok); } .gate-bad { color:var(--danger); }
+  .progress { height:8px; background:var(--panel2); border-radius:999px; overflow:hidden; margin:6px 0; }
+  .progress > div { height:100%; background:linear-gradient(90deg,var(--accent),var(--accent2)); transition:width .3s; }
+  .muted { color:var(--muted); font-size:12px; }
+  .mono { font-family:ui-monospace,Menlo,Consolas,monospace; font-size:12px; }
+  .toast { position:fixed; right:20px; bottom:20px; background:var(--panel2);
+    border:1px solid var(--line); border-left:3px solid var(--accent);
+    padding:10px 16px; border-radius:8px; max-width:420px; font-size:13px; display:none; z-index:9; }
+  .toast.err { border-left-color:var(--danger); }
+  pre { background:var(--bg); border:1px solid var(--line); border-radius:8px;
+    padding:10px; overflow:auto; max-height:340px; font-size:12px; }
+  .modal-bg { position:fixed; inset:0; background:rgba(0,0,0,.55); display:none;
+    align-items:center; justify-content:center; z-index:8; }
+  .modal { background:var(--panel); border:1px solid var(--line); border-radius:12px;
+    width:min(820px,92vw); max-height:86vh; overflow:auto; padding:20px; }
+  .tabs { display:flex; gap:8px; margin-bottom:12px; }
+  .tabs button { background:var(--panel2); } .tabs button.on { background:var(--accent); }
+  .dot { display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:6px; }
+  .dot.on { background:var(--ok); } .dot.off { background:var(--muted); }
+  .lineage-step { border-left:2px solid var(--line); padding:8px 0 8px 14px; margin-left:6px; position:relative; }
+  .lineage-step::before { content:""; position:absolute; left:-5px; top:14px; width:8px; height:8px;
+    border-radius:50%; background:var(--accent); }
+</style>
+</head>
+<body>
+<header>
+  <h1>在线派生列迁移管道</h1>
+  <span id="promiseBadge" class="badge pending">查询承诺：加载中…</span>
+  <span class="muted">接入 :8102 · 回填 worker · 查询端 :8103（三进程独立）</span>
+  <span style="flex:1"></span>
+  <span class="muted" id="simHint">模拟器：—</span>
+</header>
+
+<main>
+  <!-- 总览 -->
+  <section class="card full">
+    <h2>迁移总览（2 秒轮询）</h2>
+    <div class="stat-grid">
+      <div class="stat"><div class="n" id="sTotal">–</div><div class="l">历史表总行数</div></div>
+      <div class="stat"><div class="n PENDING" id="sPending">–</div><div class="l">PENDING 未回填</div></div>
+      <div class="stat"><div class="n STALE" id="sStale">–</div><div class="l">STALE 待追平（实时更新所致）</div></div>
+      <div class="stat"><div class="n COMPUTED" id="sComputed">–</div><div class="l">COMPUTED 已对齐（含合法空值 <span id="sNull">0</span>）</div></div>
+    </div>
+    <p class="muted" style="margin:10px 0 4px">
+      未应用变更事件 <b id="sEvents">–</b> 条 ·
+      切换闸门 <b id="sGate">–</b>
+    </p>
+  </section>
+
+  <!-- 规则 -->
+  <section class="card">
+    <h2>① 派生规则（调整即产生新版本，旧版本血缘保留）</h2>
+    <div id="ruleList"></div>
+    <label>规则名称</label><input id="ruleName" placeholder="客户分层-v2">
+    <label>表达式（可用字段：name, age, city_tier, credit_score, balance, active_days, is_active）</label>
+    <textarea id="ruleExpr"></textarea>
+    <label>说明</label><input id="ruleDesc" placeholder="本次调整的业务原因">
+    <div class="row" style="margin-top:10px">
+      <button onclick="createRule()">校验并创建新版本（默认激活）</button>
+      <button class="secondary" onclick="fillV2()">填入 v2 示例</button>
+      <button class="secondary" onclick="fillLegalNull()">填入"合法空值"示例</button>
+    </div>
+    <p class="muted" style="margin-top:8px">
+      AST 白名单求值，仅允许比较/算术/布尔/条件表达式，禁止调用、属性访问与下标。
+      换版后正在运行的回填会自动抬高目标规则版本，已回填行按新版本重算。
+    </p>
+  </section>
+
+  <!-- 回填控制 -->
+  <section class="card">
+    <h2>② 回填进程（指定范围 / 可中断 / 断点恢复）</h2>
+    <div class="row">
+      <div><label>id 下限</label><input id="idMin" type="number" value="1"></div>
+      <div><label>id 上限</label><input id="idMax" type="number" value="500"></div>
+      <div><label>每批暂停秒（模拟慢回填）</label><input id="batchDelay" type="number" step="0.05" value="0.15"></div>
+      <div><label>逐行停顿秒（放大守卫竞争窗口）</label><input id="rowDelay" type="number" step="0.005" value="0"></div>
+      <div><label>持快照停顿秒（确定性复现拦截）</label><input id="snapshotGap" type="number" step="0.01" value="0"></div>
+      <div><label>单批行数</label><input id="batchSize" type="number" value="25"></div>
+    </div>
+    <div class="row" style="margin-top:10px">
+      <button onclick="startRun()">启动 / 恢复回填</button>
+      <button class="danger" onclick="stopRun()">中断当前进程</button>
+    </div>
+    <div id="runs" style="margin-top:12px"></div>
+  </section>
+
+  <!-- 实时写入模拟 -->
+  <section class="card">
+    <h2>③ 实时写入模拟器（回填期间持续修改原记录）</h2>
+    <div class="row">
+      <div><label>随机修改 id 下限</label><input id="simMin" type="number" value="1"></div>
+      <div><label>上限</label><input id="simMax" type="number" value="500"></div>
+      <div><label>间隔秒</label><input id="simInterval" type="number" step="0.05" value="0.25"></div>
+    </div>
+    <div class="row" style="margin-top:10px">
+      <button onclick="simStart()">启动模拟流量</button>
+      <button class="secondary" onclick="simStop()">停止</button>
+    </div>
+    <p class="muted" style="margin-top:8px" id="simStatus">模拟器未启动。启动后可观察：
+      STALE 上升 → 回填"拦截旧值"计数增加 → 事件追平后回到 COMPUTED。</p>
+  </section>
+
+  <!-- 承诺切换 -->
+  <section class="card">
+    <h2>④ 查询承诺切换闸门</h2>
+    <div id="gateDetail" class="mono"></div>
+    <div class="row" style="margin-top:10px">
+      <button onclick="switchPromise('DERIVED_AUTHORITATIVE')" id="btnAuth">
+        切换为 DERIVED_AUTHORITATIVE（派生列权威）</button>
+      <button class="secondary" onclick="switchPromise('DUAL_WRITE_PENDING')">
+        回退 DUAL_WRITE_PENDING</button>
+    </div>
+    <p class="muted" style="margin-top:8px">
+      闸门条件：零 PENDING、零 STALE、零未应用事件、规则版本全量对齐、无运行中的回填。
+      不满足时切换请求返回 409。切换后查询端可直接信任派生列；回退随时允许。
+    </p>
+  </section>
+
+  <!-- 成员表 -->
+  <section class="card full">
+    <h2>⑤ 成员与派生三态（可直接修改正在处理的记录）</h2>
+    <div class="row">
+      <div><label>按状态过滤</label>
+        <select id="filterStatus" onchange="loadMembers()">
+          <option value="">全部</option><option>PENDING</option>
+          <option>STALE</option><option>COMPUTED</option>
+        </select></div>
+      <div><label>分页 limit</label><input id="pageLimit" type="number" value="20"></div>
+      <div style="flex:2"><button class="secondary" onclick="loadMembers()">刷新</button></div>
+    </div>
+    <div style="overflow:auto;margin-top:10px">
+      <table>
+        <thead><tr>
+          <th>id</th><th>name</th><th>age</th><th>city</th><th>credit</th>
+          <th>balance</th><th>active_days</th><th>is_active</th>
+          <th>row_ver</th><th>派生状态 / 值</th><th>规则v</th><th>操作</th>
+        </tr></thead>
+        <tbody id="memberRows"></tbody>
+      </table>
+    </div>
+  </section>
+</main>
+
+<!-- 血缘弹窗 -->
+<div class="modal-bg" id="modalBg" onclick="if(event.target===this)closeModal()">
+  <div class="modal">
+    <h2 style="margin-top:0">派生值血缘 <span class="muted" id="modalTitle"></span></h2>
+    <div class="tabs">
+      <button class="on" id="tabAudit" onclick="tab('audit')">计算血缘（derived_audit）</button>
+      <button id="tabEvent" onclick="tab('event')">变更事件（change_log）</button>
+    </div>
+    <div id="modalBody"></div>
+    <div style="margin-top:14px;text-align:right">
+      <button class="secondary" onclick="closeModal()">关闭</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const $ = id => document.getElementById(id);
+let currentTab = 'audit', currentMember = null;
+
+async function api(path, opts={}) {
+  const resp = await fetch(path, {
+    headers:{'Content-Type':'application/json'},
+    method: opts.body ? 'POST':'GET',
+    body: opts.body ? JSON.stringify(opts.body) : undefined,
+  });
+  const data = await resp.json();
+  if (!resp.ok) throw new Error(data.error || ('HTTP '+resp.status));
+  return data;
+}
+function toast(msg, isErr) {
+  const t = $('toast'); t.textContent = msg; t.className = 'toast' + (isErr?' err':'');
+  t.style.display='block'; clearTimeout(t._h);
+  t._h = setTimeout(()=> t.style.display='none', 4200);
+}
+async function guard(fn) { try { await fn(); } catch(e) { toast(e.message, true); } }
+
+async function refresh() {
+  const s = await api('/api/state');
+  $('sTotal').textContent = s.total_members;
+  $('sPending').textContent = s.status_counts.PENDING;
+  $('sStale').textContent = s.status_counts.STALE;
+  $('sComputed').textContent = s.status_counts.COMPUTED;
+  $('sNull').textContent = s.legal_null_computed;
+  $('sEvents').textContent = s.unapplied_events;
+  const c = s.cutover;
+  $('sGate').innerHTML = c.ready
+    ? '<span class="gate-ok">✓ 可切换</span>'
+    : '<span class="gate-bad">✗ '+c.blockers.join(', ')+'</span>';
+  const pb = $('promiseBadge');
+  if (s.query_promise === 'DERIVED_AUTHORITATIVE') {
+    pb.className='badge auth'; pb.textContent='查询承诺：DERIVED_AUTHORITATIVE（派生列权威）';
+  } else {
+    pb.className='badge pending'; pb.textContent='查询承诺：DUAL_WRITE_PENDING（迁移期，三态显式）';
+  }
+  // 规则
+  $('ruleList').innerHTML = (s.active_rule ? `
+    <p class="muted">当前激活：<b>v${s.active_rule.version} ${s.active_rule.name}</b></p>
+    <pre>${escapeHtml(s.active_rule.expr)}</pre>` : '<p class="muted">无激活规则</p>');
+  // runs
+  $('runs').innerHTML = s.runs.length ? s.runs.map(r => {
+    const pct = r.total_rows ? Math.min(100, (r.processed_rows/r.total_rows*100)).toFixed(1) : 0;
+    return `<div style="margin-bottom:12px;padding:10px;background:var(--panel2);border-radius:10px">
+      <div><b>run #${r.id}</b>
+        <span class="pill ${r.status==='PENDING'?'PENDING2':r.status}">${r.status}${r.process_alive?' · 进程存活':''}</span>
+        <span class="muted"> id∈[${r.id_min},${r.id_max}] → 规则 v${r.rule_version_target}</span></div>
+      <div class="progress"><div style="width:${pct}%"></div></div>
+      <div class="muted">游标 ${r.cursor_id} · 处理 ${r.processed_rows}/${r.total_rows}
+        · 写入 ${r.computed_writes} · 版本守卫拦截旧值 ${r.stale_overwrites_blocked}</div>
+    </div>`;
+  }).join('') : '<p class="muted">尚无回填 run</p>';
+  // 模拟器
+  const sim = s.simulator;
+  $('simHint').innerHTML = (sim.running?'<span class="dot on"></span>':'<span class="dot off"></span>')
+    + `模拟器 ${sim.running?'运行中':'停止'} · 累计写入 ${sim.writes}`;
+  $('simStatus').textContent = sim.running
+    ? `运行中：每 ${sim.interval}s 随机修改 id∈[${sim.range[0]},${sim.range[1]}]，累计 ${sim.writes} 次，最近命中 #${sim.last_target}`
+    : '模拟器未启动。启动后可观察：STALE 上升 → 回填"拦截旧值"计数增加 → 事件追平后回到 COMPUTED。';
+  // 闸门明细
+  $('gateDetail').innerHTML = JSON.stringify(c, null, 2);
+  $('btnAuth').disabled = !c.ready;
+}
+
+function escapeHtml(x) { return String(x).replace(/[&<>"]/g, c =>
+  ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+async function loadRules() {
+  const r = await api('/api/rules');
+  const versions = r.items.filter(x => x.version !== (r.active && r.active.version));
+  if (versions.length) {
+    const extra = versions.map(x =>
+      `<button class="secondary" onclick="guard(async()=>{await api('/api/rules/${x.version}/activate',{body:{}});toast('已激活 v${x.version}');refresh();})">
+        切回 v${x.version}（${escapeHtml(x.name)}）</button>`).join(' ');
+    $('ruleList').insertAdjacentHTML('beforeend', '<div class="row" style="margin-top:8px">'+extra+'</div>');
+  }
+}
+function fillV2() {
+  $('ruleName').value = '客户分层-v2';
+  $('ruleExpr').value =
+   "'VIP' if credit_score is not None and credit_score >= 720 and balance >= 200000 and is_active == 1 " +
+   "else 'DORMANT' if is_active == 0 or active_days < 10 " +
+   "else 'GROWTH' if credit_score is not None and credit_score >= 600 and age >= 18 " +
+   "else 'BASIC'";
+  $('ruleDesc').value = '新增沉睡客户分层与成年校验';
+}
+function fillLegalNull() {
+  $('ruleName').value = '客户分层-v3-含空值';
+  $('ruleExpr').value =
+   "None if credit_score is None else " +
+   "'VIP' if credit_score >= 720 and balance >= 200000 else 'GROWTH' if credit_score >= 600 else 'BASIC'";
+  $('ruleDesc').value = '信用分缺失时规则显式产出 None（合法空值，COMPUTED + value=NULL）';
+}
+async function createRule() {
+  await guard(async () => {
+    const r = await api('/api/rules', {body: {
+      name: $('ruleName').value, expr: $('ruleExpr').value,
+      description: $('ruleDesc').value, activate: true }});
+    toast(`规则 v${r.version} 创建并激活`);
+    refresh(); loadRules();
+  });
+}
+
+async function startRun() {
+  await guard(async () => {
+    const r = await api('/api/runs/start', {body: {
+      id_min: +$('idMin').value, id_max: +$('idMax').value,
+      batch_delay: +$('batchDelay').value,
+      row_delay: +$('rowDelay').value, batch_size: +$('batchSize').value,
+      snapshot_gap: +$('snapshotGap').value }});
+    toast(r.note + (r.pid ? `（pid ${r.pid}）` : ''));
+    refresh();
+  });
+}
+async function stopRun() {
+  await guard(async () => {
+    const r = await api('/api/runs');
+    const live = r.items.find(x => x.process_alive);
+    if (!live) return toast('没有存活的回填进程');
+    await api(`/api/runs/${live.id}/stop`, {body:{}});
+    toast(`run ${live.id} 已中断，断点持久化，可恢复`);
+    refresh();
+  });
+}
+async function simStart() {
+  await guard(async () => {
+    await api('/api/simulator/start', {body: {
+      id_min:+$('simMin').value, id_max:+$('simMax').value, interval:+$('simInterval').value }});
+    toast('模拟流量已启动'); refresh();
+  });
+}
+async function simStop() { await guard(async()=>{ await api('/api/simulator/stop',{body:{}}); refresh(); }); }
+async function switchPromise(v) {
+  await guard(async () => {
+    const r = await api('/api/promise', {body:{value:v}});
+    toast('查询承诺已切换为 ' + r.query_promise); refresh();
+  });
+}
+
+async function loadMembers() {
+  const st = $('filterStatus').value;
+  const limit = +$('pageLimit').value || 20;
+  const r = await api(`/api/members?limit=${limit}&offset=0${st?('&status='+st):''}`);
+  $('memberRows').innerHTML = r.items.map(m => `
+    <tr>
+      <td>${m.id}</td><td>${escapeHtml(m.name)}</td><td>${m.age ?? ''}</td>
+      <td>${m.city_tier ?? ''}</td><td>${m.credit_score ?? '∅'}</td>
+      <td>${m.balance ?? ''}</td><td>${m.active_days ?? ''}</td><td>${m.is_active ?? ''}</td>
+      <td class="mono">v${m.row_version}</td>
+      <td><span class="pill ${m.derived_status}">${m.derived_status}</span>
+        ${m.derived_status==='COMPUTED'
+          ? (m.derived_value===null ? '<b class="gate-ok">NULL（合法空值）</b>' : escapeHtml(m.derived_value))
+          : '<span class="muted">不展示旧派生值</span>'}
+      </td>
+      <td class="mono">${m.derived_rule_version ?? '–'}</td>
+      <td style="white-space:nowrap">
+        <button class="secondary" onclick="quickEdit(${m.id})">修改原值</button>
+        <button class="secondary" onclick="showLineage(${m.id})">血缘</button>
+      </td>
+    </tr>`).join('');
+}
+async function quickEdit(id) {
+  const field = prompt('要修改的源字段（credit_score / balance / active_days / is_active / age）', 'balance');
+  if (!field) return;
+  const raw = prompt('新值（整数；is_active 取 0/1）', '100000');
+  if (raw === null) return;
+  await guard(async () => {
+    await api(`/api/members/${id}/fields`, {body:{fields:{[field]: +raw}}});
+    toast(`成员 #${id} 的 ${field} 已通过接入服务更新（row_version 推进，状态置 STALE）`);
+    refresh(); loadMembers();
+  });
+}
+
+async function showLineage(id) {
+  currentMember = id; currentTab = 'audit';
+  $('tabAudit').className='on'; $('tabEvent').className='';
+  const r = await api('/api/lineage/'+id);
+  $('modalTitle').textContent = `· 成员 #${id}（当前 row_version v${r.member.row_version}）`;
+  renderModal(r);
+  $('modalBg').style.display = 'flex';
+}
+function tab(t) {
+  currentTab = t;
+  $('tabAudit').className = t==='audit'?'on':'';
+  $('tabEvent').className = t==='event'?'on':'';
+  api('/api/lineage/'+currentMember).then(renderModal);
+}
+function renderModal(r) {
+  if (currentTab === 'audit') {
+    $('modalBody').innerHTML = r.lineage.length ? r.lineage.map(a => `
+      <div class="lineage-step">
+        <div><b>audit #${a.seq}</b> · 派生值 =
+          ${a.derived_value===null ? '<b class="gate-ok">NULL（规则显式产出的合法空值）</b>'
+            : escapeHtml(a.derived_value)}
+          <span class="pill ${a.reason==='BACKFILL'?'RUNNING':'COMPUTED'}">${a.reason}</span>
+          ${a.run_id ? '<span class="muted">run #'+a.run_id+'</span>' : ''}</div>
+        <div class="muted">由 规则 v${a.rule_version} × 源行 v${a.source_version}
+          计算于 ${a.computed_at}</div>
+        <pre>${escapeHtml(JSON.stringify(a.source_snapshot, null, 2))}</pre>
+      </div>`).join('')
+      : '<p class="muted">尚无计算记录（仍为 PENDING）。</p>';
+  } else {
+    $('modalBody').innerHTML = r.change_events.length ? `
+      <table><thead><tr><th>seq</th><th>op</th><th>新 row_version</th>
+        <th>applied</th><th>时间</th></tr></thead><tbody>
+      ${r.change_events.map(e => `<tr><td>${e.seq}</td><td>${e.op}</td>
+        <td>v${e.new_row_version}</td>
+        <td>${e.applied?'<span class="pill COMPUTED">已追平</span>':'<span class="pill STALE">待消费</span>'}</td>
+        <td>${e.created_at}</td></tr>`).join('')}
+      </tbody></table>`
+      : '<p class="muted">该成员暂无变更事件。</p>';
+  }
+}
+function closeModal(){ $('modalBg').style.display='none'; }
+
+refresh(); loadRules(); loadMembers();
+setInterval(() => { refresh(); if ($('modalBg').style.display==='flex')
+  api('/api/lineage/'+currentMember).then(renderModal); else loadMembers(); }, 2000);
+</script>
+</body>
+</html>
